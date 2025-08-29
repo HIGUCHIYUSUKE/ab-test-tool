@@ -1,4 +1,6 @@
-streamlit>=1.36
-statsmodels>=0.14.0
-numpy>=1.26
-scipy>=1.11
+streamlit
+statsmodels
+numpy
+pandas
+scipy
+matplotlib
