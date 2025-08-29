@@ -126,7 +126,7 @@ with st.sidebar.form("inputs"):
     submitted = st.form_submit_button("分析開始！")
 
 # ============== Main ==============
-st.title("A/Bテスト効果検証ツール（自社用）")
+st.title("A/Bテスト効果検証ツール（修正中）")
 
 
 if not submitted:
