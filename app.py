@@ -62,7 +62,7 @@ conversion_value = st.sidebar.number_input('コンバージョン価値（円/�
 st.sidebar.caption('※ 注意：1CV=売上2万円などの前提は結果を大きく左右します。実売上ベースで設定してください。')
 
 # Main
-st.title('A/Bテスト効果検証ツール（自社用）')
+st.title('A/Bテスト効果検証ツール（樋口）')
 st.write('**ロジック**：Z検定で有意差判定 → 効果（uplift）を月間トラフィックとCV価値に外挿して事業インパクトを推計。')
 
 inp = ABInput(sessions_a, conv_a, sessions_b, conv_b)
