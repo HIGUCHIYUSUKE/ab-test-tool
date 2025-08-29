@@ -147,4 +147,113 @@ else:
 res = ztest_and_ci(inp, alpha=alpha, alternative=alternative)
 
 # 表示は right-left（テスト − コントロール）
-uplift_pt_
+uplift_pt = (res["p_right"] - res["p_left"]) * 100
+ci_low_rev  = -res["diff_ci_lr"][1]
+ci_high_rev = -res["diff_ci_lr"][0]
+
+# KPI
+c1, c2, c3 = st.columns(3)
+with c1:
+    st.metric(f"{left_label} CVR", fmt_pct(res["p_left"]))
+    st.caption(f"95%CI: {fmt_pct(res['ci_left'][0])} – {fmt_pct(res['ci_left'][1])}")
+    st.caption("計算: CV数 ÷ セッション数")
+with c2:
+    st.metric(f"{right_label} CVR", fmt_pct(res["p_right"]))
+    st.caption(f"95%CI: {fmt_pct(res['ci_right'][0])} – {fmt_pct(res['ci_right'][1])}")
+    st.caption("計算: CV数 ÷ セッション数")
+with c3:
+    diff_label = "差（テスト − コントロール）" if pair == "A（コントロール） vs B（テスト）" else "差（右 − 左）"
+    st.metric(diff_label, f"{uplift_pt:.2f} pt")
+    st.caption(f"差のCI: {ci_low_rev*100:.2f} – {ci_high_rev*100:.2f} pt")
+    st.caption("計算: 右側のCVR − 左側のCVR")
+
+st.divider()
+
+# 判定（Go / Hold / No-Go）
+pval = res["pval"]
+is_sig = pval < alpha
+meets_mde_pos = (uplift_pt >= mde_pt)
+
+# 簡易サンプルサイズ（不足・日数）
+p_base = res["p_left"]  # 基準は左側（A/Bならコントロール）
+n_quick   = quick_required_per_group(p_base, mde_pt, alpha, target_power, alternative)
+shortfall = max(0, n_quick - int(min(res["nobs"])))
+days = math.ceil(shortfall / daily_rate) if daily_rate > 0 else None
+
+# 信頼度（p値ベース）
+conf_txt = "High" if pval < 0.01 else ("Medium" if pval < alpha else "Low")
+
+st.subheader("判定")
+detail_line = f"(p = {pval:.3g} {'<' if is_sig else '≥'} α = {alpha}). 差 {uplift_pt:.2f}pt と MDE {mde_pt:.2f}pt を比較。"
+meta_line = f"P値：{pval:.3g} ／ 信頼度：{conf_txt}"
+
+msg_go  = "おめでとうございます！！今回の施策は効果が出た可能性が高く、再現性が期待できる結果です！単なる偶然ではなく、狙った効果が現れたと考えられます。"
+msg_bad = "残念ですが、今回の結果では効果があったと断言できません。効果がゼロとは限りませんが、再現性は不明です。"
+msg_low = "データ量が少なく、今回の結果では効果があったと断言できません。"
+msg_small = "有意差はあるものの、差が小さく実務的インパクトは限定的です。追加検証を推奨します。"
+
+# 判定順序（方向込み）
+if is_sig and uplift_pt < 0:
+    # 有意に悪化
+    big_judgement_box("No-Go", msg_bad, meta_line, detail_line, "error")
+elif is_sig and meets_mde_pos:
+    # 有意 かつ MDE以上（改善）
+    big_judgement_box("Go", msg_go, meta_line, detail_line, "success")
+elif (not is_sig) and shortfall > 0:
+    # 有意でない ＆ データ不足
+    extra = f" ／ 目安: 必要セッション/群 ≈ {n_quick:,}、不足 ≈ {shortfall:,}" + (f"、日数 ≈ {days}日（/群 {daily_rate:,}/日）" if days else "")
+    big_judgement_box("Hold", msg_low, meta_line + extra, detail_line, "warning")
+elif is_sig and (0 <= uplift_pt < mde_pt):
+    # 有意だが小さい
+    big_judgement_box("Hold", msg_small, meta_line, detail_line, "warning")
+else:
+    # 改善が見えず、必要母数は満たしている
+    big_judgement_box("No-Go", msg_bad, meta_line, detail_line, "error")
+
+# 折り畳み：判定の考え方（判定枠の中に置く運用）
+with st.expander("判定の考え方"):
+    st.markdown("""
+- **GO（導入推奨）**：テストの成約率がコントロールより**高い**／差が**意味のある差（MDE）以上**／データ量が**十分**で**偶然のブレではなさそう**。  
+- **HOLD（保留）**：データ量が**まだ足りない**（バナーに**必要セッション/不足/日数**を表示） **または** 差は出ているが**小さい**（MDE未満）。  
+- **NO-GO（見送り）**：テストの成約率がコントロールより**低いことがはっきり**している（偶然ではなさそう） **または** 差がほとんど見えず、**必要なデータ量は満たしている**。
+""")
+
+st.divider()
+
+# 月次インパクト
+st.subheader("月次インパクト推定（外挿）")
+st.caption("月次インパクト＝この施策に切り替えたら、1か月で**どれだけ増えるか**の見込み。 計算：（勝ちの成約率 − 現状の成約率）× 対象の月間セッション数")
+
+diff_for_impact = (res["p_right"] - res["p_left"])  # テスト − コントロール
+add_cv  = monthly_sessions * diff_for_impact
+add_rev = add_cv * cv_value
+
+add_cv_low  = monthly_sessions * ci_low_rev
+add_cv_high = monthly_sessions * ci_high_rev
+add_rev_low = add_cv_low * cv_value
+add_rev_high = add_cv_high * cv_value
+
+m1, m2, m3 = st.columns(3)
+with m1:
+    st.metric("追加CV数（推定）", f"{add_cv:,.0f} 件")
+    st.caption(f"区間: {add_cv_low:,.0f} – {add_cv_high:,.0f}")
+    st.caption("計算: (CVR差) × 月間セッション数")
+with m2:
+    st.metric("追加金額（推定）", yen(add_rev))
+    st.caption(f"区間: {yen(add_rev_low)} – {yen(add_rev_high)}")
+    st.caption("計算: 追加CV × 1CVあたりの金額")
+with m3:
+    lift_rel = (res["p_right"] / max(res["p_left"], 1e-12) - 1) * 100
+    st.metric("リフト率（相対改善率）", f"{lift_rel:.1f}%")
+    st.caption("計算: (テストCVR − コントロールCVR) ÷ コントロールCVR")
+
+st.caption("※ 1CVあたりの金額は、ECなら平均注文額（または粗利/件）、リード獲得なら LTV×成約率 など実態に合わせて設定してください。")
+
+st.divider()
+with st.expander("計算の根拠（かんたん説明）"):
+    st.markdown("""
+- **p値**：二群の比率のZ検定で「偶然この差が出る確率」。小さいほど偶然ではない。  
+- **信頼度（表示ルール）**：High : p < 0.01 ／ Medium : 0.01 ≤ p < α（既定 0.05）／ Low : p ≥ α  
+- **月次インパクト**： 追加CV = (CVR差) × 月間セッション数 ／ 追加金額 = 追加CV × 1CVあたりの金額  
+- **簡易サンプルサイズ（目安）**：必要セッション/群 ≈ `K × p(1−p) / d²`（K=2×(z_{α-side}+z_{power})²）
+""")
