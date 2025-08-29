@@ -172,10 +172,7 @@ with st.sidebar.form("inputs"):
         step=1000,
         help="ECなら平均注文額（または粗利/件）、リードなら LTV×成約率 など。",
     )
-    daily_rate = st.number_input(
-        "1日あたりの各群セッション（目安・任意）", value=0, step=100, help="不足セッションから日数目安を出すために使用（任意）。"
-    )
-
+    
     submitted = st.form_submit_button("分析開始！")
 
 # ------------------------------
